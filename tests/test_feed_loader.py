@@ -42,6 +42,6 @@ topics:
 
         settings, topics = load_feeds_config(yaml_file)
 
-        assert settings.max_articles_per_topic == 10
+        assert settings.max_articles_per_topic == 15
         assert settings.max_articles_per_source == 3
         assert topics == []

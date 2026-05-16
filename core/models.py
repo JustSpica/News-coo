@@ -6,7 +6,7 @@ from datetime import datetime
 
 @dataclass(frozen=True)
 class FeedSettings:
-    max_articles_per_topic: int = 10
+    max_articles_per_topic: int = 15
     max_articles_per_source: int = 3
     request_delay_seconds: float = 0.5
 

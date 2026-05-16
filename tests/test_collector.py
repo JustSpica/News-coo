@@ -61,7 +61,7 @@ def _make_topic(
 
 def _default_settings(**overrides) -> FeedSettings:
     defaults = {
-        "max_articles_per_topic": 10,
+        "max_articles_per_topic": 15,
         "max_articles_per_source": 3,
         "request_delay_seconds": 0,
     }
