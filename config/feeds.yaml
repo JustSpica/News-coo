@@ -7,7 +7,7 @@ settings:
 
 topics:
 
-  economia_mundial:
+  world_economy:
     display_name: "Economia Mundial"
     sources:
       - name: Reuters
@@ -30,7 +30,7 @@ topics:
         domain: asia.nikkei.com
         google_news: "https://news.google.com/rss/search?q=economy+OR+markets+OR+trade+site:asia.nikkei.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
-  economia_brasileira:
+  brazilian_economy:
     display_name: "Economia Brasileira"
     sources:
       - name: InfoMoney
@@ -53,7 +53,7 @@ topics:
         domain: bloomberg.com
         google_news: "https://news.google.com/rss/search?q=Brazil+economy+OR+Brazil+market+OR+Brazil+trade:bloomberg.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
-  politica_mundial:
+  world_politics:
     display_name: "Política Mundial"
     sources:
       - name: Reuters
@@ -72,7 +72,7 @@ topics:
         domain: theguardian.com
         google_news: "https://news.google.com/rss/search?q=world+politics+OR+geopolitics+OR+diplomacy+OR+elections+site:theguardian.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
-  politica_brasileira:
+  brazilian_politics:
     display_name: "Política Brasileira"
     sources:
       - name: Poder360
@@ -95,7 +95,7 @@ topics:
         domain: g1.globo.com
         google_news: "https://news.google.com/rss/search?q=política+OR+governo+OR+congresso+OR+senado+site:g1.globo.com+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
-  tecnologia:
+  technology:
     display_name: "Tecnologia"
     sources:
       - name: Reuters Tech
@@ -118,7 +118,7 @@ topics:
         domain: nucleo.jor.br
         google_news: "https://news.google.com/rss/search?q=tecnologia+OR+computação+OR+software+OR+cibersegurança+OR+claude+site:nucleo.jor.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
-  inteligencia_artificial:
+  artificial_intelligence:
     display_name: "Inteligência Artificial"
     sources:
       - name: Núcleo Jornalismo
