@@ -1,4 +1,4 @@
-# morgans-bot
+# News Coo
 
 A Discord bot that collects news from Google News RSS feeds, organizes them by topic, and displays paginated digests using slash commands. Feed sources and topics are declared in a single YAML file; the collector fetches all topics in parallel with per-source rate limiting and cross-source deduplication.
 
@@ -32,7 +32,7 @@ A Discord bot that collects news from Google News RSS feeds, organizes them by t
 
 ```bash
 git clone <repo-url>
-cd morgans-bot
+cd news-coo-bot
 
 python -m venv .venv
 source .venv/bin/activate
