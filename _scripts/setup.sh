@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
-PIDFILE="$DIR/.bot.pid"
-LOGFILE="$DIR/bot.log"
-VENV="$DIR/.venv/bin/activate"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+PIDFILE="$ROOT/.bot.pid"
+LOGFILE="$ROOT/bot.log"
+VENV="$ROOT/.venv/bin/activate"
 
 up() {
     if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then

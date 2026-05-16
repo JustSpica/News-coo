@@ -1,13 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DIR="$(cd "$(dirname "$0")" && pwd)"
-VENV="$DIR/.venv/bin/activate"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+VENV="$ROOT/.venv/bin/activate"
 
 source "$VENV"
 
-echo "=== ruff check ==="
-ruff check "$DIR" --fix "$@"
+if [[ "${1:-}" == "--check" ]]; then
+    echo "=== ruff check ==="
+    ruff check "$ROOT"
 
-echo "=== ruff format ==="
-ruff format "$DIR" "$@"
+    echo "=== ruff format --check ==="
+    ruff format "$ROOT" --check
+else
+    echo "=== ruff check --fix ==="
+    ruff check "$ROOT" --fix
+
+    echo "=== ruff format ==="
+    ruff format "$ROOT"
+fi
