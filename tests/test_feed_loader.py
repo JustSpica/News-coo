@@ -1,0 +1,47 @@
+from __future__ import annotations
+
+from core.feed_loader import load_feeds_config
+
+
+class TestFeedLoaderYaml:
+    def test_yaml_with_settings_and_topic_returns_correct_config(self, tmp_path) -> None:
+        yaml_content = """\
+settings:
+  max_articles_per_topic: 5
+  max_articles_per_source: 2
+
+topics:
+  economia:
+    display_name: "Economia"
+    sources:
+      - name: Reuters
+        domain: reuters.com
+        google_news: "https://news.google.com/rss/search?q=economy"
+"""
+        yaml_file = tmp_path / "feeds.yaml"
+        yaml_file.write_text(yaml_content)
+
+        settings, topics = load_feeds_config(yaml_file)
+
+        assert settings.max_articles_per_topic == 5
+        assert settings.max_articles_per_source == 2
+        assert len(topics) == 1
+        assert topics[0].key == "economia"
+        assert topics[0].display_name == "Economia"
+        assert len(topics[0].sources) == 1
+
+        source = topics[0].sources[0]
+        assert source.name == "Reuters"
+        assert source.domain == "reuters.com"
+        assert source.google_news_url == "https://news.google.com/rss/search?q=economy"
+
+    def test_yaml_without_settings_returns_defaults(self, tmp_path) -> None:
+        yaml_content = "topics: {}\n"
+        yaml_file = tmp_path / "feeds.yaml"
+        yaml_file.write_text(yaml_content)
+
+        settings, topics = load_feeds_config(yaml_file)
+
+        assert settings.max_articles_per_topic == 10
+        assert settings.max_articles_per_source == 3
+        assert topics == []
