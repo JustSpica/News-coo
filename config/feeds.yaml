@@ -5,7 +5,7 @@
 
 settings:
   max_articles_per_topic: 15
-  max_articles_per_source: 3
+  min_articles_per_source: 1
 
 topics:
 
