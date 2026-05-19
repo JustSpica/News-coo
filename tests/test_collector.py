@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import asyncio
+import urllib.parse
 from datetime import UTC, datetime
 
-from core.collector import FeedCollector
+import pytest
+
+from core.collector import MAX_FEED_BYTES, FeedCollector
 from core.models import Article, FeedSettings, Source, Topic
 
 
@@ -44,6 +47,12 @@ SAMPLE_RSS_SOURCE_A_ONLY = _build_rss(
 SAMPLE_RSS_SOURCE_B_SINGLE = _build_rss(
     [
         ("B1", "https://news.google.com/b1", "https://source-b.com"),
+    ]
+)
+
+SAMPLE_RSS_WRONG_SOURCE_SINGLE = _build_rss(
+    [
+        ("Wrong", "https://news.google.com/wrong", "https://wrong-source.com"),
     ]
 )
 
@@ -240,6 +249,24 @@ class TestSourceFallback:
         assert all(a.source_name == "SourceA" for a in articles)
         assert "SourceB" in result.topic_results[0].failed_sources
 
+    def test_fallback_without_matching_source_records_source_as_failed(self) -> None:
+        sources = [
+            _make_source("SourceA", "source-a.com"),
+            _make_source("SourceB", "source-b.com"),
+        ]
+        topic = _make_topic(sources=sources)
+        collector = FakeFeedCollector(
+            _default_settings(max_articles_per_topic=4),
+            [topic],
+            {"test_topic": SAMPLE_RSS_SOURCE_A_ONLY},
+            {"source-b.com": SAMPLE_RSS_WRONG_SOURCE_SINGLE},
+        )
+        result = asyncio.run(collector.collect())
+
+        articles = result.topic_results[0].articles
+        assert [a.title for a in articles] == ["A1", "A2", "A3", "A4"]
+        assert "SourceB" in result.topic_results[0].failed_sources
+
 
 class TestBuildGoogleNewsUrl:
     def test_english_topic_builds_correct_url(self) -> None:
@@ -278,7 +305,7 @@ class TestBuildGoogleNewsUrl:
         assert "hl=pt-BR" in url
         assert "gl=BR" in url
 
-    def test_unknown_language_falls_back_to_english(self) -> None:
+    def test_unknown_language_raises_clear_error(self) -> None:
         topic = Topic(
             key="test",
             display_name="Test",
@@ -287,10 +314,22 @@ class TestBuildGoogleNewsUrl:
             sources=[Source(name="Test", domain="example.com")],
         )
 
-        url = FeedCollector._build_google_news_url(topic)
+        with pytest.raises(ValueError, match="Unsupported topic language"):
+            FeedCollector._build_google_news_url(topic)
 
-        assert "hl=en-US" in url
-        assert "gl=US" in url
+    def test_query_values_are_url_encoded(self) -> None:
+        topic = Topic(
+            key="test",
+            display_name="Test",
+            keywords=["market & trade", "GDP=now"],
+            language="en",
+            sources=[Source(name="Reuters", domain="reuters.com")],
+        )
+
+        url = FeedCollector._build_google_news_url(topic)
+        query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)["q"]
+
+        assert query == ["market & trade OR GDP=now (site:reuters.com) when:7d"]
 
     def test_source_url_targets_single_domain(self) -> None:
         topic = Topic(
@@ -331,3 +370,24 @@ class TestIdentifySourceName:
         sources = [Source(name="Reuters", domain="reuters.com")]
         result = FeedCollector._identify_source_name("https://unknown.com", sources)
         assert result == "Unknown"
+
+
+class TestDownloadFeed:
+    def test_oversized_response_raises_clear_error(self, monkeypatch) -> None:
+        class OversizedResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, _exc_type, _exc, _traceback):
+                return None
+
+            def read(self, _size):
+                return b"x" * (MAX_FEED_BYTES + 1)
+
+        def fake_urlopen(_request, timeout):
+            return OversizedResponse()
+
+        monkeypatch.setattr("core.collector.urllib.request.urlopen", fake_urlopen)
+
+        with pytest.raises(ValueError, match="Feed response exceeded"):
+            FeedCollector._download_feed("https://example.com/rss")

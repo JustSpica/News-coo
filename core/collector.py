@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
@@ -21,6 +23,9 @@ from core.models import (
 log = logging.getLogger(__name__)
 
 FETCH_TIMEOUT_SECONDS = 30
+FETCH_RETRY_ATTEMPTS = 2
+FETCH_RETRY_BACKOFF_SECONDS = 0.5
+MAX_FEED_BYTES = 2_000_000
 USER_AGENT = "news-coo/1.0"
 GOOGLE_NEWS_RSS_BASE = "https://news.google.com/rss/search"
 
@@ -86,52 +91,18 @@ class FeedCollector:
             [s.name for s in missing_sources],
         )
 
-        replacements: list[Article] = []
-        sources_needing_fetch: list[Source] = []
-
-        for source in missing_sources:
-            leftover_match = next(
-                (a for a in leftover if a.source_name == source.name),
-                None,
-            )
-            if leftover_match:
-                replacements.append(leftover_match)
-            else:
-                sources_needing_fetch.append(source)
-
-        if sources_needing_fetch:
-            log.info(
-                "Topic '%s': fetching individually for %s",
-                topic.display_name,
-                [s.name for s in sources_needing_fetch],
-            )
-            fallback_tasks = [
-                loop.run_in_executor(
-                    None,
-                    self._fetch_source_articles,
-                    topic,
-                    source,
-                )
-                for source in sources_needing_fetch
-            ]
-            results = await asyncio.gather(
-                *fallback_tasks,
-                return_exceptions=True,
-            )
-            for source, result in zip(sources_needing_fetch, results, strict=True):
-                if isinstance(result, Exception):
-                    log.warning(
-                        "Fallback fetch failed for source '%s': %s",
-                        source.name,
-                        result,
-                    )
-                    topic_result.failed_sources.append(source.name)
-                else:
-                    replacements.extend(result)
-
-        if replacements:
-            cut = max(0, len(top_articles) - len(replacements))
-            top_articles = (top_articles[:cut] + replacements)[:max_total]
+        replacements, failed_sources = await self._collect_source_replacements(
+            topic,
+            missing_sources,
+            leftover,
+            loop,
+        )
+        topic_result.failed_sources.extend(failed_sources)
+        top_articles = self._replace_lowest_ranked_articles(
+            top_articles,
+            replacements,
+            max_total,
+        )
 
         topic_result.articles = top_articles
 
@@ -142,6 +113,68 @@ class FeedCollector:
             len(replacements),
         )
         return topic_result
+
+    async def _collect_source_replacements(
+        self,
+        topic: Topic,
+        missing_sources: list[Source],
+        leftover: list[Article],
+        loop: asyncio.AbstractEventLoop,
+    ) -> tuple[list[Article], list[str]]:
+        replacements: list[Article] = []
+        failed_sources: list[str] = []
+        sources_needing_fetch: list[Source] = []
+
+        for source in missing_sources:
+            leftover_match = self._find_first_source_article(leftover, source)
+            if leftover_match:
+                replacements.append(leftover_match)
+            else:
+                sources_needing_fetch.append(source)
+
+        if not sources_needing_fetch:
+            return replacements, failed_sources
+
+        log.info(
+            "Topic '%s': fetching individually for %s",
+            topic.display_name,
+            [s.name for s in sources_needing_fetch],
+        )
+        fallback_tasks = [
+            loop.run_in_executor(
+                None,
+                self._fetch_source_articles,
+                topic,
+                source,
+            )
+            for source in sources_needing_fetch
+        ]
+        results = await asyncio.gather(
+            *fallback_tasks,
+            return_exceptions=True,
+        )
+
+        for source, result in zip(sources_needing_fetch, results, strict=True):
+            if isinstance(result, Exception):
+                log.warning(
+                    "Fallback fetch failed for source '%s': %s",
+                    source.name,
+                    result,
+                )
+                failed_sources.append(source.name)
+                continue
+
+            fallback_match = self._find_first_source_article(result, source)
+            if fallback_match:
+                replacements.append(fallback_match)
+            else:
+                log.warning(
+                    "Fallback fetch for source '%s' returned no matching articles",
+                    source.name,
+                )
+                failed_sources.append(source.name)
+
+        return replacements, failed_sources
 
     def _fetch_topic_feed(self, topic: Topic) -> list[Article]:
         url = self._build_google_news_url(topic)
@@ -201,20 +234,38 @@ class FeedCollector:
 
     @staticmethod
     def _build_google_news_url(topic: Topic) -> str:
-        keywords_part = "+OR+".join(k.replace(" ", "+") for k in topic.keywords)
-        sites_part = "+OR+".join(f"site:{s.domain}" for s in topic.sources)
-        query = f"{keywords_part}+({sites_part})+when:7d"
-        lang_params = LANGUAGE_PARAMS.get(topic.language, LANGUAGE_PARAMS["en"])
-        params = "&".join(f"{k}={v}" for k, v in lang_params.items())
-        return f"{GOOGLE_NEWS_RSS_BASE}?q={query}&{params}"
+        keywords_part = " OR ".join(topic.keywords)
+        sites_part = " OR ".join(f"site:{s.domain}" for s in topic.sources)
+        return FeedCollector._build_search_url(
+            f"{keywords_part} ({sites_part}) when:7d",
+            topic.language,
+        )
 
     @staticmethod
     def _build_source_url(topic: Topic, source: Source) -> str:
-        keywords_part = "+OR+".join(k.replace(" ", "+") for k in topic.keywords)
-        query = f"{keywords_part}+site:{source.domain}+when:7d"
-        lang_params = LANGUAGE_PARAMS.get(topic.language, LANGUAGE_PARAMS["en"])
-        params = "&".join(f"{k}={v}" for k, v in lang_params.items())
-        return f"{GOOGLE_NEWS_RSS_BASE}?q={query}&{params}"
+        keywords_part = " OR ".join(topic.keywords)
+        return FeedCollector._build_search_url(
+            f"{keywords_part} site:{source.domain} when:7d",
+            topic.language,
+        )
+
+    @staticmethod
+    def _build_search_url(query: str, language: str) -> str:
+        params = {
+            "q": query,
+            **FeedCollector._language_params(language),
+        }
+        encoded_params = urllib.parse.urlencode(params, safe="():")
+        return f"{GOOGLE_NEWS_RSS_BASE}?{encoded_params}"
+
+    @staticmethod
+    def _language_params(language: str) -> dict[str, str]:
+        try:
+            return LANGUAGE_PARAMS[language]
+        except KeyError:
+            supported = ", ".join(sorted(LANGUAGE_PARAMS))
+            msg = f"Unsupported topic language: {language}. Supported: {supported}"
+            raise ValueError(msg) from None
 
     @staticmethod
     def _find_missing_sources(
@@ -223,6 +274,21 @@ class FeedCollector:
     ) -> list[Source]:
         found_names = {a.source_name for a in articles}
         return [s for s in sources if s.name not in found_names]
+
+    @staticmethod
+    def _find_first_source_article(articles: list[Article], source: Source) -> Article | None:
+        return next((article for article in articles if article.source_name == source.name), None)
+
+    @staticmethod
+    def _replace_lowest_ranked_articles(
+        top_articles: list[Article],
+        replacements: list[Article],
+        max_total: int,
+    ) -> list[Article]:
+        if not replacements:
+            return top_articles
+        cut = max(0, len(top_articles) - len(replacements))
+        return (top_articles[:cut] + replacements)[:max_total]
 
     @staticmethod
     def _identify_source_name(source_url: str, sources: list[Source]) -> str:
@@ -237,10 +303,31 @@ class FeedCollector:
         if not url.startswith(("https://", "http://")):
             msg = f"Unsupported URL scheme: {url}"
             raise ValueError(msg)
+
+        for attempt in range(FETCH_RETRY_ATTEMPTS + 1):
+            try:
+                return FeedCollector._download_feed_once(url)
+            except urllib.error.HTTPError:
+                raise
+            except (TimeoutError, urllib.error.URLError) as exc:
+                if attempt == FETCH_RETRY_ATTEMPTS:
+                    raise
+                log.warning("Feed download failed, retrying: %s", exc)
+                time.sleep(FETCH_RETRY_BACKOFF_SECONDS * (attempt + 1))
+
+        msg = f"Failed to download feed: {url}"
+        raise RuntimeError(msg)
+
+    @staticmethod
+    def _download_feed_once(url: str) -> bytes:
         encoded_url = urllib.parse.quote(url, safe=":/?&=+%()")
         request = urllib.request.Request(encoded_url, headers={"User-Agent": USER_AGENT})  # noqa: S310
         with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:  # noqa: S310
-            return response.read()
+            content = response.read(MAX_FEED_BYTES + 1)
+        if len(content) > MAX_FEED_BYTES:
+            msg = f"Feed response exceeded {MAX_FEED_BYTES} bytes"
+            raise ValueError(msg)
+        return content
 
     @staticmethod
     def _parse_date(entry: dict) -> datetime | None:
