@@ -1,6 +1,6 @@
 # News Coo
 
-A Discord bot that collects news from Google News RSS feeds, organizes them by topic, and displays paginated digests using slash commands. Feed sources and topics are declared in a single YAML file; the collector fetches all topics in parallel with per-source rate limiting and cross-source deduplication.
+A Discord bot that collects news from Google News RSS feeds, organizes them by topic, and displays paginated digests using slash commands. Feed sources and topics are declared in a single YAML file; the collector builds one Google News query per topic combining all sources, fetches all topics in parallel, and applies source-guarantee prioritization with deduplication.
 
 ## Table of contents
 
@@ -16,11 +16,11 @@ A Discord bot that collects news from Google News RSS feeds, organizes them by t
 
 ## Features
 
-- **Declarative feed configuration.** Topics and sources are defined in `config/feeds.yaml`. Adding a new source is a three-line YAML entry — no code changes required.
-- **Parallel collection.** All topics are fetched concurrently via `asyncio.gather`, with a configurable delay between sources within each topic to respect rate limits.
+- **Declarative feed configuration.** Topics and sources are defined in `config/feeds.yaml`. Adding a new source is a two-line YAML entry (name + domain) — no code changes required. The collector builds the Google News RSS URL automatically from the topic keywords, source domains, and language.
+- **Parallel collection.** All topics are fetched concurrently via `asyncio.gather`. Each topic produces a single Google News query that combines all its sources with `(site:a.com OR site:b.com)`, leveraging Google's own ranking.
+- **Source-guarantee prioritization.** Each source is guaranteed a minimum number of articles (configurable). Remaining slots up to the topic limit are filled by Google's ranking order across all sources.
 - **Cross-source deduplication.** Duplicate articles (by URL) within the same topic are filtered out automatically.
 - **Paginated Discord embeds.** The `/digest` command displays one topic per page with Previous/Next navigation buttons. The pagination component is generic and reusable by other commands.
-- **Per-source and per-topic limits.** Configurable caps prevent any single source from dominating a topic and keep each topic to a manageable article count.
 
 ## Requirements
 
@@ -66,9 +66,9 @@ The bot logs to `bot.log` in the project root. Use `./_scripts/setup.sh status` 
 ├── core/
 │   ├── models.py             # Domain dataclasses (Article, Topic, Source, etc.)
 │   ├── feed_loader.py        # YAML config parser
-│   └── collector.py          # RSS fetcher with parallel topics and dedup
+│   └── collector.py          # RSS fetcher with parallel topics, prioritization, and dedup
 ├── tests/
-│   ├── test_collector.py     # Feed collection, parsing, limits, dedup
+│   ├── test_collector.py     # Feed collection, parsing, prioritization, dedup
 │   ├── test_digest_embed.py  # Embed formatting and content
 │   ├── test_feed_loader.py   # YAML loading and defaults
 │   └── test_pagination.py    # Pagination view navigation and state
@@ -88,30 +88,35 @@ The bot logs to `bot.log` in the project root. Use `./_scripts/setup.sh status` 
 | Key | Default | Description |
 |---|---|---|
 | `max_articles_per_topic` | `15` | Maximum articles kept per topic after collection. |
-| `max_articles_per_source` | `3` | Maximum articles accepted from a single source within a topic. |
-| `request_delay_seconds` | `0.5` | Delay in seconds between source fetches within the same topic. |
+| `min_articles_per_source` | `1` | Minimum guaranteed articles from each source before filling remaining slots by ranking. |
 
 ### Topics and sources
 
-Each topic has a `display_name` and a list of `sources`. Each source points to a Google News RSS search URL filtered by `site:` and search terms.
+Each topic has a `display_name`, a list of `keywords` for the search query, a `language` that determines the Google News locale, and a list of `sources` (name + domain). The collector combines these into a single RSS URL per topic.
 
 ```yaml
 topics:
-  economia_mundial:
+  world_economy:
     display_name: "Economia Mundial"
+    keywords:
+      - "global economy"
+      - "world markets"
+      - "trade"
+    language: en
     sources:
       - name: Reuters
         domain: reuters.com
-        google_news: "https://news.google.com/rss/search?q=global+economy+site:reuters.com+when:7d&hl=en-US&gl=US&ceid=US:en"
+      - name: Financial Times
+        domain: ft.com
 ```
 
-The Google News RSS URL format is:
+The generated Google News RSS URL follows this format:
 
 ```
-https://news.google.com/rss/search?q={query}&hl={lang}&gl={country}&ceid={country}:{lang_code}
+https://news.google.com/rss/search?q={keyword1}+OR+{keyword2}+(site:{domain1}+OR+site:{domain2})+when:7d&hl={hl}&gl={gl}&ceid={ceid}
 ```
 
-The `when:7d` suffix in the query restricts results to the last 7 days.
+Supported languages: `en` (US locale) and `pt` (Brazilian locale). The `when:7d` suffix restricts results to the last 7 days.
 
 ## Usage
 
