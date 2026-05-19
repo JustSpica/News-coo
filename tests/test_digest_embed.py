@@ -53,6 +53,25 @@ class TestBuildTopicEmbed:
 
         assert "**Article title" in embed.description
 
+    def test_embed_description_escapes_untrusted_markdown(self) -> None:
+        topic_result = TopicResult(
+            topic_key="test_topic",
+            topic_display_name="Test Topic",
+            articles=[_make_article(1, title_length=0)],
+        )
+        topic_result.articles[0] = Article(
+            url="https://example.com/article-1",
+            title="@everyone **breaking**",
+            source_name="TestSource",
+            topic_key="test_topic",
+            topic_display_name="Test Topic",
+        )
+
+        embed = build_topic_embed(topic_result, page_index=0, total_pages=1)
+
+        assert "@everyone" not in embed.description
+        assert r"\*\*breaking\*\*" in embed.description
+
     def test_embed_description_never_exceeds_discord_limit(self) -> None:
         topic_result = _make_topic_result(article_count=50)
         embed = build_topic_embed(topic_result, page_index=0, total_pages=1)

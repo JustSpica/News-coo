@@ -11,6 +11,7 @@ from core.feed_loader import load_feeds_config
 from core.models import TopicResult
 
 EMBED_DESCRIPTION_MAX_LENGTH = 4096
+MARKDOWN_ESCAPE_CHARS = set(r"\`*_{}[]()#+-.!|>~")
 
 
 def build_topic_embed(
@@ -36,7 +37,8 @@ def _build_article_list(topic_result: TopicResult) -> str:
     current_length = 0
 
     for index, article in enumerate(topic_result.articles, start=1):
-        line = f"{index:02d}. **{article.title}**"
+        title = _escape_article_title(article.title)
+        line = f"{index:02d}. **{title}**"
 
         if current_length + len(line) + 1 > EMBED_DESCRIPTION_MAX_LENGTH:
             break
@@ -45,6 +47,11 @@ def _build_article_list(topic_result: TopicResult) -> str:
         current_length += len(line) + 1
 
     return "\n".join(lines)
+
+
+def _escape_article_title(title: str) -> str:
+    title = discord.utils.escape_mentions(title)
+    return "".join(f"\\{char}" if char in MARKDOWN_ESCAPE_CHARS else char for char in title)
 
 
 class Digest(commands.Cog):
