@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import discord
+import pytest
 
 from bot.ui.pagination import PaginationView
 
@@ -31,6 +32,10 @@ def _click_button(view: PaginationView, button_label: str) -> None:
 
 
 class TestPaginationView:
+    def test_empty_pages_are_rejected(self) -> None:
+        with pytest.raises(ValueError, match="at least one page"):
+            PaginationView([])
+
     def test_current_page_starts_at_first_embed(self) -> None:
         pages = _make_pages()
         view = PaginationView(pages)

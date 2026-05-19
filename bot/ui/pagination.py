@@ -20,6 +20,9 @@ class PaginationView(discord.ui.View):
         *,
         timeout: float = DEFAULT_PAGINATION_TIMEOUT_SECONDS,
     ) -> None:
+        if not pages:
+            msg = "PaginationView requires at least one page"
+            raise ValueError(msg)
         super().__init__(timeout=timeout)
         self._pages = pages
         self._current_index = 0
