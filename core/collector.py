@@ -66,24 +66,7 @@ class FeedCollector:
             topic_result.failed_sources = [s.name for s in topic.sources]
             return topic_result
 
-        seen_urls: set[str] = set()
-        source_counts: dict[str, int] = {}
-        max_per_source = self._settings.max_articles_per_source
-        max_per_topic = self._settings.max_articles_per_topic
-
-        for article in articles:
-            if article.url in seen_urls:
-                continue
-            seen_urls.add(article.url)
-
-            count = source_counts.get(article.source_name, 0)
-            if count >= max_per_source:
-                continue
-            source_counts[article.source_name] = count + 1
-
-            topic_result.articles.append(article)
-            if len(topic_result.articles) >= max_per_topic:
-                break
+        topic_result.articles = self._prioritize_articles(articles)
 
         log.info(
             "Topic '%s': %d articles",
@@ -91,6 +74,34 @@ class FeedCollector:
             len(topic_result.articles),
         )
         return topic_result
+
+    def _prioritize_articles(self, articles: list[Article]) -> list[Article]:
+        min_per_source = self._settings.min_articles_per_source
+        max_per_topic = self._settings.max_articles_per_topic
+
+        guaranteed: list[Article] = []
+        remaining: list[Article] = []
+        source_counts: dict[str, int] = {}
+        seen_urls: set[str] = set()
+
+        for article in articles:
+            if article.url in seen_urls:
+                continue
+            seen_urls.add(article.url)
+
+            count = source_counts.get(article.source_name, 0)
+            if count < min_per_source:
+                guaranteed.append(article)
+                source_counts[article.source_name] = count + 1
+            else:
+                remaining.append(article)
+
+        result = guaranteed[:]
+        slots_left = max_per_topic - len(result)
+        if slots_left > 0:
+            result.extend(remaining[:slots_left])
+
+        return result[:max_per_topic]
 
     def _fetch_topic_feed(self, topic: Topic) -> list[Article]:
         url = self._build_google_news_url(topic)
