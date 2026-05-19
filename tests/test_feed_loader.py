@@ -8,7 +8,6 @@ class TestFeedLoaderYaml:
         yaml_content = """\
 settings:
   max_articles_per_topic: 5
-  min_articles_per_source: 2
 
 topics:
   economia:
@@ -27,7 +26,6 @@ topics:
         settings, topics = load_feeds_config(yaml_file)
 
         assert settings.max_articles_per_topic == 5
-        assert settings.min_articles_per_source == 2
         assert len(topics) == 1
         assert topics[0].key == "economia"
         assert topics[0].display_name == "Economia"
@@ -47,5 +45,4 @@ topics:
         settings, topics = load_feeds_config(yaml_file)
 
         assert settings.max_articles_per_topic == 15
-        assert settings.min_articles_per_source == 1
         assert topics == []

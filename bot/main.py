@@ -11,7 +11,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
 )
-log = logging.getLogger("morgans-bot")
+log = logging.getLogger("news-coo-bot")
 
 intents = discord.Intents.default()
 

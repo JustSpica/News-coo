@@ -7,7 +7,6 @@ from datetime import datetime
 @dataclass(frozen=True)
 class FeedSettings:
     max_articles_per_topic: int = 15
-    min_articles_per_source: int = 1
 
 
 @dataclass(frozen=True)
