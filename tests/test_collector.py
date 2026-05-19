@@ -3,49 +3,60 @@ from __future__ import annotations
 import asyncio
 from datetime import UTC, datetime
 
-import feedparser
-
 from core.collector import FeedCollector
 from core.models import Article, FeedSettings, Source, Topic
 
 
-def _build_rss(items: list[tuple[str, str]]) -> str:
+def _build_rss(items: list[tuple[str, str, str]]) -> str:
     entries = "\n".join(
         f"    <item><title>{title}</title><link>{url}</link>"
+        f'<source url="{source_url}">Source</source>'
         f"<pubDate>Wed, 14 May 2026 10:00:00 GMT</pubDate></item>"
-        for title, url in items
+        for title, url, source_url in items
     )
     return (
         '<?xml version="1.0" encoding="UTF-8"?>\n'
-        "<rss version=\"2.0\">\n  <channel>\n"
+        '<rss version="2.0">\n  <channel>\n'
         f"    <title>Test</title>\n{entries}\n"
         "  </channel>\n</rss>"
     )
 
 
-SAMPLE_RSS = _build_rss([
-    ("First Article", "https://example.com/article-1"),
-    ("Second Article", "https://example.com/article-2"),
-    ("Third Article", "https://example.com/article-3"),
-    ("Fourth Article", "https://example.com/article-4"),
-])
+SAMPLE_RSS = _build_rss(
+    [
+        ("First Article", "https://news.google.com/article-1", "https://example.com"),
+        ("Second Article", "https://news.google.com/article-2", "https://example.com"),
+        ("Third Article", "https://news.google.com/article-3", "https://example.com"),
+        ("Fourth Article", "https://news.google.com/article-4", "https://example.com"),
+    ]
+)
 
-SAMPLE_RSS_WITH_DUPLICATES = _build_rss([
-    ("First Article", "https://example.com/article-1"),
-    ("First Article (duplicate)", "https://example.com/article-1"),
-    ("Second Article", "https://example.com/article-2"),
-])
+SAMPLE_RSS_SOURCE_A_ONLY = _build_rss(
+    [
+        ("A1", "https://news.google.com/a1", "https://source-a.com"),
+        ("A2", "https://news.google.com/a2", "https://source-a.com"),
+        ("A3", "https://news.google.com/a3", "https://source-a.com"),
+        ("A4", "https://news.google.com/a4", "https://source-a.com"),
+        ("A5", "https://news.google.com/a5", "https://source-a.com"),
+    ]
+)
 
-SAMPLE_RSS_MIXED_SOURCES = _build_rss([
-    ("A1", "https://source-a.com/a1"),
-    ("A2", "https://source-a.com/a2"),
-    ("A3", "https://source-a.com/a3"),
-    ("A4", "https://source-a.com/a4"),
-    ("B1", "https://source-b.com/b1"),
-    ("B2", "https://source-b.com/b2"),
-    ("B3", "https://source-b.com/b3"),
-    ("B4", "https://source-b.com/b4"),
-])
+SAMPLE_RSS_SOURCE_B_SINGLE = _build_rss(
+    [
+        ("B1", "https://news.google.com/b1", "https://source-b.com"),
+    ]
+)
+
+SAMPLE_RSS_B_BEYOND_CUTOFF = _build_rss(
+    [
+        ("A1", "https://news.google.com/a1", "https://source-a.com"),
+        ("A2", "https://news.google.com/a2", "https://source-a.com"),
+        ("A3", "https://news.google.com/a3", "https://source-a.com"),
+        ("A4", "https://news.google.com/a4", "https://source-a.com"),
+        ("A5", "https://news.google.com/a5", "https://source-a.com"),
+        ("B1", "https://news.google.com/b1-leftover", "https://source-b.com"),
+    ]
+)
 
 MALFORMED_RSS = "this is not valid xml at all"
 
@@ -68,49 +79,38 @@ def _make_topic(
 
 
 def _default_settings(**overrides) -> FeedSettings:
-    defaults = {
-        "max_articles_per_topic": 15,
-        "min_articles_per_source": 1,
-    }
+    defaults = {"max_articles_per_topic": 15}
     defaults.update(overrides)
     return FeedSettings(**defaults)
 
 
 class FakeFeedCollector(FeedCollector):
-    """Substitutes network calls with canned RSS content keyed by topic."""
+    """Substitutes network calls with canned RSS content."""
 
     def __init__(
         self,
         settings: FeedSettings,
         topics: list[Topic],
         rss_by_topic: dict[str, str],
+        rss_by_source: dict[str, str] | None = None,
     ) -> None:
         super().__init__(settings, topics)
         self._rss_by_topic = rss_by_topic
+        self._rss_by_source = rss_by_source or {}
 
     def _fetch_topic_feed(self, topic: Topic) -> list[Article]:
         raw = self._rss_by_topic.get(topic.key, MALFORMED_RSS)
-        parsed = feedparser.parse(raw)
-        if parsed.bozo and not parsed.entries:
-            raise parsed.bozo_exception
+        return self._parse_feed_entries(raw, topic)
 
-        articles: list[Article] = []
-        for entry in parsed.entries:
-            link = entry.get("link", "").strip()
-            title = entry.get("title", "").strip()
-            if not link or not title:
-                continue
-            articles.append(
-                Article(
-                    url=link,
-                    title=title,
-                    source_name=self._identify_source_name(link, topic.sources),
-                    topic_key=topic.key,
-                    topic_display_name=topic.display_name,
-                    published_at=self._parse_date(entry),
-                )
-            )
-        return articles
+    def _fetch_source_articles(
+        self,
+        topic: Topic,
+        source: Source,
+    ) -> list[Article]:
+        raw = self._rss_by_source.get(source.domain)
+        if raw is None:
+            raise ConnectionError(f"No canned RSS for {source.domain}")
+        return self._parse_feed_entries(raw, topic, limit=1)
 
 
 class TestFeedCollectorParsing:
@@ -133,18 +133,6 @@ class TestFeedCollectorParsing:
         assert first.published_at == datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
         assert topic_result.failed_sources == []
 
-    def test_duplicate_urls_are_kept_only_once(self) -> None:
-        topic = _make_topic()
-        collector = FakeFeedCollector(
-            _default_settings(),
-            [topic],
-            {"test_topic": SAMPLE_RSS_WITH_DUPLICATES},
-        )
-        result = asyncio.run(collector.collect())
-
-        urls = [a.url for a in result.topic_results[0].articles]
-        assert len(urls) == len(set(urls))
-
     def test_malformed_rss_records_all_sources_as_failed(self) -> None:
         topic = _make_topic()
         collector = FakeFeedCollector(
@@ -160,44 +148,22 @@ class TestFeedCollectorParsing:
 
 
 class TestArticlePrioritization:
-    def test_each_source_guaranteed_at_least_min_articles(self) -> None:
+    def test_articles_follow_google_ranking_order(self) -> None:
         sources = [
             _make_source("SourceA", "source-a.com"),
             _make_source("SourceB", "source-b.com"),
         ]
         topic = _make_topic(sources=sources)
         collector = FakeFeedCollector(
-            _default_settings(max_articles_per_topic=4),
+            _default_settings(max_articles_per_topic=6),
             [topic],
-            {"test_topic": SAMPLE_RSS_MIXED_SOURCES},
+            {"test_topic": SAMPLE_RSS_B_BEYOND_CUTOFF},
         )
         result = asyncio.run(collector.collect())
 
         articles = result.topic_results[0].articles
-        source_names = {a.source_name for a in articles}
-        assert "SourceA" in source_names
-        assert "SourceB" in source_names
-
-    def test_remaining_slots_filled_by_ranking_order(self) -> None:
-        sources = [
-            _make_source("SourceA", "source-a.com"),
-            _make_source("SourceB", "source-b.com"),
-        ]
-        topic = _make_topic(sources=sources)
-        collector = FakeFeedCollector(
-            _default_settings(max_articles_per_topic=5),
-            [topic],
-            {"test_topic": SAMPLE_RSS_MIXED_SOURCES},
-        )
-        result = asyncio.run(collector.collect())
-
-        articles = result.topic_results[0].articles
-        assert len(articles) == 5
-        assert articles[0].title == "A1"
-        assert articles[1].title == "B1"
-        assert articles[2].title == "A2"
-        assert articles[3].title == "A3"
-        assert articles[4].title == "A4"
+        assert len(articles) == 6
+        assert [a.title for a in articles] == ["A1", "A2", "A3", "A4", "A5", "B1"]
 
     def test_multiple_topics_collect_articles_independently(self) -> None:
         topic_a = _make_topic(key="topic_a")
@@ -217,6 +183,62 @@ class TestArticlePrioritization:
 
         assert len(result.topic_results) == 2
         assert result.total_articles == 8
+
+
+class TestSourceFallback:
+    def test_missing_source_found_in_leftover(self) -> None:
+        sources = [
+            _make_source("SourceA", "source-a.com"),
+            _make_source("SourceB", "source-b.com"),
+        ]
+        topic = _make_topic(sources=sources)
+        collector = FakeFeedCollector(
+            _default_settings(max_articles_per_topic=4),
+            [topic],
+            {"test_topic": SAMPLE_RSS_B_BEYOND_CUTOFF},
+        )
+        result = asyncio.run(collector.collect())
+
+        articles = result.topic_results[0].articles
+        assert len(articles) == 4
+        assert [a.title for a in articles] == ["A1", "A2", "A3", "B1"]
+        assert result.topic_results[0].failed_sources == []
+
+    def test_missing_source_fetched_individually(self) -> None:
+        sources = [
+            _make_source("SourceA", "source-a.com"),
+            _make_source("SourceB", "source-b.com"),
+        ]
+        topic = _make_topic(sources=sources)
+        collector = FakeFeedCollector(
+            _default_settings(max_articles_per_topic=4),
+            [topic],
+            {"test_topic": SAMPLE_RSS_SOURCE_A_ONLY},
+            {"source-b.com": SAMPLE_RSS_SOURCE_B_SINGLE},
+        )
+        result = asyncio.run(collector.collect())
+
+        articles = result.topic_results[0].articles
+        assert len(articles) == 4
+        assert [a.title for a in articles] == ["A1", "A2", "A3", "B1"]
+        assert result.topic_results[0].failed_sources == []
+
+    def test_fallback_failure_records_source_as_failed(self) -> None:
+        sources = [
+            _make_source("SourceA", "source-a.com"),
+            _make_source("SourceB", "source-b.com"),
+        ]
+        topic = _make_topic(sources=sources)
+        collector = FakeFeedCollector(
+            _default_settings(),
+            [topic],
+            {"test_topic": SAMPLE_RSS_SOURCE_A_ONLY},
+        )
+        result = asyncio.run(collector.collect())
+
+        articles = result.topic_results[0].articles
+        assert all(a.source_name == "SourceA" for a in articles)
+        assert "SourceB" in result.topic_results[0].failed_sources
 
 
 class TestBuildGoogleNewsUrl:
@@ -270,19 +292,42 @@ class TestBuildGoogleNewsUrl:
         assert "hl=en-US" in url
         assert "gl=US" in url
 
+    def test_source_url_targets_single_domain(self) -> None:
+        topic = Topic(
+            key="tech",
+            display_name="Tech",
+            keywords=["artificial intelligence"],
+            language="en",
+            sources=[
+                Source(name="Reuters", domain="reuters.com"),
+                Source(name="WIRED", domain="wired.com"),
+            ],
+        )
+        source = Source(name="WIRED", domain="wired.com")
+
+        url = FeedCollector._build_source_url(topic, source)
+
+        assert "site:wired.com" in url
+        assert "site:reuters.com" not in url
+
 
 class TestIdentifySourceName:
     def test_exact_domain_match(self) -> None:
         sources = [Source(name="Reuters", domain="reuters.com")]
-        result = FeedCollector._identify_source_name("https://reuters.com/article/1", sources)
+        result = FeedCollector._identify_source_name("https://reuters.com", sources)
+        assert result == "Reuters"
+
+    def test_www_subdomain_match(self) -> None:
+        sources = [Source(name="Reuters", domain="reuters.com")]
+        result = FeedCollector._identify_source_name("https://www.reuters.com", sources)
         assert result == "Reuters"
 
     def test_subdomain_match(self) -> None:
         sources = [Source(name="Nikkei", domain="asia.nikkei.com")]
-        result = FeedCollector._identify_source_name("https://asia.nikkei.com/article/1", sources)
+        result = FeedCollector._identify_source_name("https://asia.nikkei.com", sources)
         assert result == "Nikkei"
 
     def test_unknown_domain_returns_unknown(self) -> None:
         sources = [Source(name="Reuters", domain="reuters.com")]
-        result = FeedCollector._identify_source_name("https://unknown.com/article/1", sources)
+        result = FeedCollector._identify_source_name("https://unknown.com", sources)
         assert result == "Unknown"

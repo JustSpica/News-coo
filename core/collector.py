@@ -58,72 +58,138 @@ class FeedCollector:
 
         loop = asyncio.get_running_loop()
         try:
-            articles = await loop.run_in_executor(
-                None, self._fetch_topic_feed, topic
-            )
+            combined_articles = await loop.run_in_executor(None, self._fetch_topic_feed, topic)
         except Exception as exc:
             log.error("Failed to fetch topic %s: %s", topic.key, exc)
             topic_result.failed_sources = [s.name for s in topic.sources]
             return topic_result
 
-        topic_result.articles = self._prioritize_articles(articles)
+        max_total = self._settings.max_articles_per_topic
+        top_articles = combined_articles[:max_total]
+        leftover = combined_articles[max_total:]
+
+        missing_sources = self._find_missing_sources(top_articles, topic.sources)
+
+        if not missing_sources:
+            topic_result.articles = top_articles
+            log.info(
+                "Topic '%s': %d articles",
+                topic.display_name,
+                len(topic_result.articles),
+            )
+            return topic_result
 
         log.info(
-            "Topic '%s': %d articles",
+            "Topic '%s': sources missing from top %d: %s",
+            topic.display_name,
+            max_total,
+            [s.name for s in missing_sources],
+        )
+
+        replacements: list[Article] = []
+        sources_needing_fetch: list[Source] = []
+
+        for source in missing_sources:
+            leftover_match = next(
+                (a for a in leftover if a.source_name == source.name),
+                None,
+            )
+            if leftover_match:
+                replacements.append(leftover_match)
+            else:
+                sources_needing_fetch.append(source)
+
+        if sources_needing_fetch:
+            log.info(
+                "Topic '%s': fetching individually for %s",
+                topic.display_name,
+                [s.name for s in sources_needing_fetch],
+            )
+            fallback_tasks = [
+                loop.run_in_executor(
+                    None,
+                    self._fetch_source_articles,
+                    topic,
+                    source,
+                )
+                for source in sources_needing_fetch
+            ]
+            results = await asyncio.gather(
+                *fallback_tasks,
+                return_exceptions=True,
+            )
+            for source, result in zip(sources_needing_fetch, results, strict=True):
+                if isinstance(result, Exception):
+                    log.warning(
+                        "Fallback fetch failed for source '%s': %s",
+                        source.name,
+                        result,
+                    )
+                    topic_result.failed_sources.append(source.name)
+                else:
+                    replacements.extend(result)
+
+        if replacements:
+            cut = max(0, len(top_articles) - len(replacements))
+            top_articles = (top_articles[:cut] + replacements)[:max_total]
+
+        topic_result.articles = top_articles
+
+        log.info(
+            "Topic '%s': %d articles (%d replaced)",
             topic.display_name,
             len(topic_result.articles),
+            len(replacements),
         )
         return topic_result
 
-    def _prioritize_articles(self, articles: list[Article]) -> list[Article]:
-        min_per_source = self._settings.min_articles_per_source
-        max_per_topic = self._settings.max_articles_per_topic
-
-        guaranteed: list[Article] = []
-        remaining: list[Article] = []
-        source_counts: dict[str, int] = {}
-        seen_urls: set[str] = set()
-
-        for article in articles:
-            if article.url in seen_urls:
-                continue
-            seen_urls.add(article.url)
-
-            count = source_counts.get(article.source_name, 0)
-            if count < min_per_source:
-                guaranteed.append(article)
-                source_counts[article.source_name] = count + 1
-            else:
-                remaining.append(article)
-
-        result = guaranteed[:]
-        slots_left = max_per_topic - len(result)
-        if slots_left > 0:
-            result.extend(remaining[:slots_left])
-
-        return result[:max_per_topic]
-
     def _fetch_topic_feed(self, topic: Topic) -> list[Article]:
         url = self._build_google_news_url(topic)
+        log.info("Fetching topic '%s': %s", topic.display_name, url)
         raw_content = self._download_feed(url)
+        return self._parse_feed_entries(raw_content, topic)
 
-        parsed = feedparser.parse(raw_content)
+    def _fetch_source_articles(
+        self,
+        topic: Topic,
+        source: Source,
+    ) -> list[Article]:
+        url = self._build_source_url(topic, source)
+        log.info("Fetching fallback for source '%s': %s", source.name, url)
+        raw_content = self._download_feed(url)
+        return self._parse_feed_entries(
+            raw_content,
+            topic,
+            limit=1,
+        )
 
+    def _parse_feed_entries(
+        self,
+        raw: bytes | str,
+        topic: Topic,
+        limit: int | None = None,
+    ) -> list[Article]:
+        parsed = feedparser.parse(raw)
         if parsed.bozo and not parsed.entries:
             raise parsed.bozo_exception
 
         articles: list[Article] = []
         for entry in parsed.entries:
+            if limit is not None and len(articles) >= limit:
+                break
             link = entry.get("link", "").strip()
             title = entry.get("title", "").strip()
             if not link or not title:
                 continue
-
+            source_url = getattr(entry.get("source", {}), "href", "")
             articles.append(
                 Article(
                     url=link,
                     title=title,
-                    source_name=self._identify_source_name(link, topic.sources),
+                    source_name=self._identify_source_name(
+                        source_url,
+                        topic.sources,
+                    ),
                     topic_key=topic.key,
                     topic_display_name=topic.display_name,
                     published_at=self._parse_date(entry),
@@ -143,8 +209,24 @@ class FeedCollector:
         return f"{GOOGLE_NEWS_RSS_BASE}?q={query}&{params}"
 
     @staticmethod
-    def _identify_source_name(article_url: str, sources: list[Source]) -> str:
-        hostname = urllib.parse.urlparse(article_url).hostname or ""
+    def _build_source_url(topic: Topic, source: Source) -> str:
+        keywords_part = "+OR+".join(k.replace(" ", "+") for k in topic.keywords)
+        query = f"{keywords_part}+site:{source.domain}+when:7d"
+        lang_params = LANGUAGE_PARAMS.get(topic.language, LANGUAGE_PARAMS["en"])
+        params = "&".join(f"{k}={v}" for k, v in lang_params.items())
+        return f"{GOOGLE_NEWS_RSS_BASE}?q={query}&{params}"
+
+    @staticmethod
+    def _find_missing_sources(
+        articles: list[Article],
+        sources: list[Source],
+    ) -> list[Source]:
+        found_names = {a.source_name for a in articles}
+        return [s for s in sources if s.name not in found_names]
+
+    @staticmethod
+    def _identify_source_name(source_url: str, sources: list[Source]) -> str:
+        hostname = urllib.parse.urlparse(source_url).hostname or ""
         for source in sources:
             if hostname == source.domain or hostname.endswith(f".{source.domain}"):
                 return source.name
@@ -168,6 +250,6 @@ class FeedCollector:
                 continue
             try:
                 return parsedate_to_datetime(raw).astimezone(UTC)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 continue
         return None
