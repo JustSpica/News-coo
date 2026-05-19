@@ -8,20 +8,20 @@ from datetime import datetime
 class FeedSettings:
     max_articles_per_topic: int = 15
     max_articles_per_source: int = 3
-    request_delay_seconds: float = 0.5
 
 
 @dataclass(frozen=True)
 class Source:
     name: str
     domain: str
-    google_news_url: str
 
 
 @dataclass(frozen=True)
 class Topic:
     key: str
     display_name: str
+    keywords: list[str]
+    language: str
     sources: list[Source]
 
 

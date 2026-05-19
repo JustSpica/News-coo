@@ -1,146 +1,176 @@
 # URL format: https://news.google.com/rss/search?q={query}&hl={lang}&gl={country}&ceid={country}:{lang_code}
 
+# To search for each topic, you should combine the variables keywords and sources.domain in the query parameter.
+# Ex.: https://news.google.com/search?q=global+economy+OR+world+markets+OR+trade+(site:reuters.com+OR+site:ft.com)+when:7d&hl=en-US&gl=US&ceid=US:en
+
 settings:
   max_articles_per_topic: 15
   max_articles_per_source: 3
-  request_delay_seconds: 0.5
 
 topics:
 
   world_economy:
     display_name: "Economia Mundial"
+    keywords:
+      - "global economy"
+      - "world markets"
+      - "trade"
+      - "inflation"
+      - "interest rates"
+      - "GDP"
+    language: en
     sources:
       - name: Reuters
         domain: reuters.com
-        google_news: "https://news.google.com/rss/search?q=global+economy+OR+markets+OR+trade+site:reuters.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: Financial Times
         domain: ft.com
-        google_news: "https://news.google.com/rss/search?q=global+economy+OR+markets+OR+trade+site:ft.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: Bloomberg
         domain: bloomberg.com
-        google_news: "https://news.google.com/rss/search?q=global+economy+OR+markets+OR+trade+site:bloomberg.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: South China Morning Post
         domain: scmp.com
-        google_news: "https://news.google.com/rss/search?q=economy+OR+markets+OR+trade+site:scmp.com+when:7d&hl=en-US&gl=US&ceid=US:en"
-
+        
       - name: Nikkei Asia
         domain: asia.nikkei.com
-        google_news: "https://news.google.com/rss/search?q=economy+OR+markets+OR+trade+site:asia.nikkei.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
   brazilian_economy:
     display_name: "Economia Brasileira"
+    keywords:
+      - "economia"
+      - "mercado"
+      - "PIB"
+      - "Selic"
+      - "inflação"
+      - "câmbio"
+      - "Ibovespa"
+    language: pt
     sources:
       - name: InfoMoney
         domain: infomoney.com.br
-        google_news: "https://news.google.com/rss/search?q=economia+OR+mercado+OR+PIB+OR+Selic+OR+inflação+site:infomoney.com.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
       - name: Valor Econômico
         domain: valor.globo.com
-        google_news: "https://news.google.com/rss/search?q=economia+OR+mercado+OR+PIB+OR+Selic+OR+inflação+site:valor.globo.com+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
-      - name: Reuters Brasil
-        domain: reuters.com
-        google_news: "https://news.google.com/rss/search?q=Brazil+economy+OR+Brazil+market+OR+Brazil+trade+site:reuters.com+when:7d&hl=en-US&gl=US&ceid=US:en"
-
-      - name: Financial Times Brasil
-        domain: ft.com
-        google_news: "https://news.google.com/rss/search?q=Brazil+economy+OR+Brazil+market+OR+Brazil+trade:ft.com+when:7d&hl=en-US&gl=US&ceid=US:en"
-
-      - name: Bloomberg Brasil
-        domain: bloomberg.com
-        google_news: "https://news.google.com/rss/search?q=Brazil+economy+OR+Brazil+market+OR+Brazil+trade:bloomberg.com+when:7d&hl=en-US&gl=US&ceid=US:en"
-
-  world_politics:
-    display_name: "Política Mundial"
+  brazilian_economy_international:
+    display_name: "Economia Brasileira (visão internacional)"
+    keywords:
+      - "Brazil economy"
+      - "Brazil market"
+      - "Brazil trade"
+      - "Brazil GDP"
+    language: en
     sources:
       - name: Reuters
         domain: reuters.com
-        google_news: "https://news.google.com/rss/search?q=world+politics+OR+geopolitics+OR+diplomacy+OR+elections+site:reuters.com+when:7d&hl=en-US&gl=US&ceid=US:en"
+
+      - name: Financial Times
+        domain: ft.com
+
+      - name: Bloomberg
+        domain: bloomberg.com
+
+  world_politics:
+    display_name: "Política Mundial"
+    keywords:
+      - "world politics"
+      - "geopolitics"
+      - "diplomacy"
+      - "elections"
+      - "sanctions"
+      - "NATO"
+      - "United Nations"
+    language: en
+    sources:
+      - name: Reuters
+        domain: reuters.com
 
       - name: Associated Press
         domain: apnews.com
-        google_news: "https://news.google.com/rss/search?q=world+politics+OR+geopolitics+OR+diplomacy+OR+elections+site:apnews.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: BBC News
         domain: bbc.com
-        google_news: "https://news.google.com/rss/search?q=world+politics+OR+geopolitics+OR+diplomacy+OR+elections+site:bbc.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: The Guardian
         domain: theguardian.com
-        google_news: "https://news.google.com/rss/search?q=world+politics+OR+geopolitics+OR+diplomacy+OR+elections+site:theguardian.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
   brazilian_politics:
     display_name: "Política Brasileira"
+    keywords:
+      - "política"
+      - "governo"
+      - "congresso"
+      - "senado"
+      - "STF"
+      - "Planalto"
+    language: pt
     sources:
       - name: Poder360
         domain: poder360.com.br
-        google_news: "https://news.google.com/rss/search?q=política+OR+governo+OR+congresso+OR+senado+site:poder360.com.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
       - name: Congresso em Foco
         domain: congressoemfoco.uol.com.br
-        google_news: "https://news.google.com/rss/search?q=política+OR+governo+OR+congresso+OR+senado+site:congressoemfoco.uol.com.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
       - name: Metrópoles
         domain: metropoles.com
-        google_news: "https://news.google.com/rss/search?q=política+OR+governo+OR+congresso+OR+senado+site:metropoles.com+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
       - name: Folha de S.Paulo
         domain: folha.uol.com.br
-        google_news: "https://news.google.com/rss/search?q=política+OR+governo+OR+congresso+OR+senado+site:folha.uol.com.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
       - name: G1
         domain: g1.globo.com
-        google_news: "https://news.google.com/rss/search?q=política+OR+governo+OR+congresso+OR+senado+site:g1.globo.com+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
   technology:
     display_name: "Tecnologia"
+    keywords:
+      - "technology"
+      - "software"
+      - "cybersecurity"
+      - "cloud computing"
+      - "open source"
+    language: en
     sources:
-      - name: Reuters Tech
+      - name: Reuters
         domain: reuters.com
-        google_news: "https://news.google.com/rss/search?q=technology+OR+computing+OR+software+OR+cybersecurity+OR+claude+site:reuters.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: IEEE Spectrum
         domain: spectrum.ieee.org
-        google_news: "https://news.google.com/rss/search?q=technology+OR+computing+OR+software+OR+cybersecurity+OR+claude+site:spectrum.ieee.org+when:7d&hl=en-US&gl=US&ceid=US:en"
 
-      - name: MIT Technology Review Brasil
-        domain: mittechreview.com.br
-        google_news: "https://news.google.com/rss/search?q=tecnologia+OR+computação+OR+software+OR+cibersegurança+OR+claude+site:mittechreview.com.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+      - name: MIT Technology Review
+        domain: technologyreview.com
 
       - name: WIRED
         domain: wired.com
-        google_news: "https://news.google.com/rss/search?q=technology+OR+computing+OR+software+OR+cybersecurity+OR+claude+site:wired.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: Núcleo Jornalismo
         domain: nucleo.jor.br
-        google_news: "https://news.google.com/rss/search?q=tecnologia+OR+computação+OR+software+OR+cibersegurança+OR+claude+site:nucleo.jor.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
   artificial_intelligence:
     display_name: "Inteligência Artificial"
+    keywords:
+      - "artificial intelligence"
+      - "AI"
+      - "machine learning"
+      - "LLM"
+      - "generative AI"
+      - "deep learning"
+    language: en
     sources:
       - name: Núcleo Jornalismo
         domain: nucleo.jor.br
-        google_news: "https://news.google.com/rss/search?q=inteligência+artificial+OR+IA+site:nucleo.jor.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
 
-      - name: MIT Technology Review Brasil
-        domain: mittechreview.com.br
-        google_news: "https://news.google.com/rss/search?q=inteligência+artificial+OR+IA+OR+machine+learning+site:mittechreview.com.br+when:7d&hl=pt-BR&gl=BR&ceid=BR:pt-419"
+      - name: MIT Technology Review
+        domain: technologyreview.com
 
       - name: IEEE Spectrum
         domain: spectrum.ieee.org
-        google_news: "https://news.google.com/rss/search?q=artificial+intelligence+OR+machine+learning+OR+neural+network+site:spectrum.ieee.org+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: Ars Technica
         domain: arstechnica.com
-        google_news: "https://news.google.com/rss/search?q=artificial+intelligence+OR+AI+OR+LLM+OR+machine+learning+site:arstechnica.com+when:7d&hl=en-US&gl=US&ceid=US:en"
 
       - name: The Verge
         domain: theverge.com
-        google_news: "https://news.google.com/rss/search?q=artificial+intelligence+OR+AI+OR+LLM+site:theverge.com+when:7d&hl=en-US&gl=US&ceid=US:en"
-
+        
       - name: TechCrunch
         domain: techcrunch.com
-        google_news: "https://news.google.com/rss/search?q=artificial+intelligence+OR+AI+OR+LLM+OR+generative+AI+site:techcrunch.com+when:7d&hl=en-US&gl=US&ceid=US:en"

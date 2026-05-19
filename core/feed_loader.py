@@ -25,13 +25,14 @@ def load_feeds_config(path: Path) -> tuple[FeedSettings, list[Topic]]:
                 Source(
                     name=source_entry["name"],
                     domain=source_entry["domain"],
-                    google_news_url=source_entry["google_news"],
                 )
             )
         topics.append(
             Topic(
                 key=topic_key,
                 display_name=topic_entry["display_name"],
+                keywords=topic_entry.get("keywords", []),
+                language=topic_entry.get("language", "en"),
                 sources=sources,
             )
         )
