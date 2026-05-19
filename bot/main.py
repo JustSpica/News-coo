@@ -5,7 +5,7 @@ from pathlib import Path
 import discord
 from discord.ext import commands
 
-from config.settings import DISCORD_TOKEN
+from config.settings import get_discord_token
 
 logging.basicConfig(
     level=logging.INFO,
@@ -42,7 +42,7 @@ async def load_cogs() -> None:
 async def main() -> None:
     async with bot:
         await load_cogs()
-        await bot.start(DISCORD_TOKEN)
+        await bot.start(get_discord_token())
 
 
 if __name__ == "__main__":
