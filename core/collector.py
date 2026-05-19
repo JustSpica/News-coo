@@ -21,7 +21,13 @@ from core.models import (
 log = logging.getLogger(__name__)
 
 FETCH_TIMEOUT_SECONDS = 30
-USER_AGENT = "morgans-bot/1.0"
+USER_AGENT = "news-coo/1.0"
+GOOGLE_NEWS_RSS_BASE = "https://news.google.com/rss/search"
+
+LANGUAGE_PARAMS: dict[str, dict[str, str]] = {
+    "en": {"hl": "en-US", "gl": "US", "ceid": "US:en"},
+    "pt": {"hl": "pt-BR", "gl": "BR", "ceid": "BR:pt-419"},
+}
 
 
 class FeedCollector:
@@ -50,67 +56,45 @@ class FeedCollector:
             topic_display_name=topic.display_name,
         )
 
-        seen_urls: set[str] = set()
         loop = asyncio.get_running_loop()
-
-        for source in topic.sources:
-            articles = await self._try_fetch_source(loop, source, topic)
-            if articles is None:
-                topic_result.failed_sources.append(source.name)
-                continue
-
-            self._append_deduplicated(topic_result, articles, seen_urls)
-
-            max_per_topic = self._settings.max_articles_per_topic
-            if len(topic_result.articles) >= max_per_topic:
-                topic_result.articles = topic_result.articles[:max_per_topic]
-                break
-
-            await asyncio.sleep(self._settings.request_delay_seconds)
-
-        log.info(
-            "Topic '%s': %d articles, %d failed sources",
-            topic.display_name,
-            len(topic_result.articles),
-            len(topic_result.failed_sources),
-        )
-        return topic_result
-
-    async def _try_fetch_source(
-        self,
-        loop: asyncio.AbstractEventLoop,
-        source: Source,
-        topic: Topic,
-    ) -> list[Article] | None:
         try:
-            return await loop.run_in_executor(
-                None,
-                self._fetch_source,
-                source,
-                topic,
+            articles = await loop.run_in_executor(
+                None, self._fetch_topic_feed, topic
             )
         except Exception as exc:
-            log.error("Failed source %s in topic %s: %s", source.name, topic.key, exc)
-            return None
+            log.error("Failed to fetch topic %s: %s", topic.key, exc)
+            topic_result.failed_sources = [s.name for s in topic.sources]
+            return topic_result
 
-    def _append_deduplicated(
-        self,
-        topic_result: TopicResult,
-        articles: list[Article],
-        seen_urls: set[str],
-    ) -> None:
-        source_count = 0
+        seen_urls: set[str] = set()
+        source_counts: dict[str, int] = {}
+        max_per_source = self._settings.max_articles_per_source
+        max_per_topic = self._settings.max_articles_per_topic
+
         for article in articles:
             if article.url in seen_urls:
                 continue
-            if source_count >= self._settings.max_articles_per_source:
-                break
             seen_urls.add(article.url)
-            topic_result.articles.append(article)
-            source_count += 1
 
-    def _fetch_source(self, source: Source, topic: Topic) -> list[Article]:
-        raw_content = self._download_feed(source.google_news_url)
+            count = source_counts.get(article.source_name, 0)
+            if count >= max_per_source:
+                continue
+            source_counts[article.source_name] = count + 1
+
+            topic_result.articles.append(article)
+            if len(topic_result.articles) >= max_per_topic:
+                break
+
+        log.info(
+            "Topic '%s': %d articles",
+            topic.display_name,
+            len(topic_result.articles),
+        )
+        return topic_result
+
+    def _fetch_topic_feed(self, topic: Topic) -> list[Article]:
+        url = self._build_google_news_url(topic)
+        raw_content = self._download_feed(url)
 
         parsed = feedparser.parse(raw_content)
 
@@ -128,22 +112,39 @@ class FeedCollector:
                 Article(
                     url=link,
                     title=title,
-                    source_name=source.name,
+                    source_name=self._identify_source_name(link, topic.sources),
                     topic_key=topic.key,
                     topic_display_name=topic.display_name,
                     published_at=self._parse_date(entry),
                 )
             )
 
-        log.debug("Parsed %d entries from %s", len(articles), source.name)
+        log.debug("Parsed %d entries for topic %s", len(articles), topic.key)
         return articles
+
+    @staticmethod
+    def _build_google_news_url(topic: Topic) -> str:
+        keywords_part = "+OR+".join(k.replace(" ", "+") for k in topic.keywords)
+        sites_part = "+OR+".join(f"site:{s.domain}" for s in topic.sources)
+        query = f"{keywords_part}+({sites_part})+when:7d"
+        lang_params = LANGUAGE_PARAMS.get(topic.language, LANGUAGE_PARAMS["en"])
+        params = "&".join(f"{k}={v}" for k, v in lang_params.items())
+        return f"{GOOGLE_NEWS_RSS_BASE}?q={query}&{params}"
+
+    @staticmethod
+    def _identify_source_name(article_url: str, sources: list[Source]) -> str:
+        hostname = urllib.parse.urlparse(article_url).hostname or ""
+        for source in sources:
+            if hostname == source.domain or hostname.endswith(f".{source.domain}"):
+                return source.name
+        return "Unknown"
 
     @staticmethod
     def _download_feed(url: str) -> bytes:
         if not url.startswith(("https://", "http://")):
             msg = f"Unsupported URL scheme: {url}"
             raise ValueError(msg)
-        encoded_url = urllib.parse.quote(url, safe=":/?&=+%")
+        encoded_url = urllib.parse.quote(url, safe=":/?&=+%()")
         request = urllib.request.Request(encoded_url, headers={"User-Agent": USER_AGENT})  # noqa: S310
         with urllib.request.urlopen(request, timeout=FETCH_TIMEOUT_SECONDS) as response:  # noqa: S310
             return response.read()
@@ -156,6 +157,6 @@ class FeedCollector:
                 continue
             try:
                 return parsedate_to_datetime(raw).astimezone(UTC)
-            except ValueError, TypeError:
+            except (ValueError, TypeError):
                 continue
         return None
