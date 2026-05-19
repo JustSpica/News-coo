@@ -1,7 +1,7 @@
 # URL format: https://news.google.com/rss/search?q={query}&hl={lang}&gl={country}&ceid={country}:{lang_code}
 
 # To search for each topic, you should combine the variables keywords and sources.domain in the query parameter.
-# Ex.: https://news.google.com/search?q=global+economy+OR+world+markets+OR+trade+(site:reuters.com+OR+site:ft.com)+when:7d&hl=en-US&gl=US&ceid=US:en
+# Ex.: https://news.google.com/rss/search?q=global+economy+OR+world+markets+OR+trade+(site:reuters.com+OR+site:ft.com)+when:7d&hl=en-US&gl=US&ceid=US:en
 
 settings:
   max_articles_per_topic: 15
@@ -30,7 +30,7 @@ topics:
 
       - name: South China Morning Post
         domain: scmp.com
-        
+
       - name: Nikkei Asia
         domain: asia.nikkei.com
 
@@ -109,7 +109,7 @@ topics:
         domain: poder360.com.br
 
       - name: Congresso em Foco
-        domain: congressoemfoco.uol.com.br
+        domain: congressoemfoco.com.br
 
       - name: Metrópoles
         domain: metropoles.com
@@ -170,6 +170,6 @@ topics:
 
       - name: The Verge
         domain: theverge.com
-        
+
       - name: TechCrunch
         domain: techcrunch.com

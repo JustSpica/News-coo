@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from core.feed_loader import load_feeds_config
+import pytest
+
+from core.feed_loader import FeedConfigError, load_feeds_config
 
 
 class TestFeedLoaderYaml:
@@ -46,3 +48,78 @@ topics:
 
         assert settings.max_articles_per_topic == 15
         assert topics == []
+
+    @pytest.mark.parametrize(
+        ("yaml_content", "message"),
+        [
+            ("", "feeds config must be a mapping"),
+            (
+                """\
+settings:
+  unknown_setting: true
+topics: {}
+""",
+                "Unknown feed setting",
+            ),
+            (
+                """\
+settings:
+  max_articles_per_topic: 0
+topics: {}
+""",
+                "max_articles_per_topic must be between",
+            ),
+            (
+                """\
+topics:
+  test:
+    display_name: Test
+    keywords:
+      - news
+    language: fr
+    sources:
+      - name: Example
+        domain: example.com
+""",
+                "Unsupported language",
+            ),
+            (
+                """\
+topics:
+  test:
+    display_name: Test
+    keywords: []
+    language: en
+    sources:
+      - name: Example
+        domain: example.com
+""",
+                "keywords must be a non-empty list",
+            ),
+            (
+                """\
+topics:
+  test:
+    display_name: Test
+    keywords:
+      - news
+    language: en
+    sources:
+      - name: Example
+        domain: "example.com&bad=true"
+""",
+                "domain is invalid",
+            ),
+        ],
+    )
+    def test_invalid_yaml_raises_config_error(
+        self,
+        tmp_path,
+        yaml_content: str,
+        message: str,
+    ) -> None:
+        yaml_file = tmp_path / "feeds.yaml"
+        yaml_file.write_text(yaml_content)
+
+        with pytest.raises(FeedConfigError, match=message):
+            load_feeds_config(yaml_file)
