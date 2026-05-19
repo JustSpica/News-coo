@@ -13,10 +13,13 @@ settings:
 topics:
   economia:
     display_name: "Economia"
+    keywords:
+      - "economia"
+      - "mercado"
+    language: pt
     sources:
       - name: Reuters
         domain: reuters.com
-        google_news: "https://news.google.com/rss/search?q=economy"
 """
         yaml_file = tmp_path / "feeds.yaml"
         yaml_file.write_text(yaml_content)
@@ -28,12 +31,13 @@ topics:
         assert len(topics) == 1
         assert topics[0].key == "economia"
         assert topics[0].display_name == "Economia"
+        assert topics[0].keywords == ["economia", "mercado"]
+        assert topics[0].language == "pt"
         assert len(topics[0].sources) == 1
 
         source = topics[0].sources[0]
         assert source.name == "Reuters"
         assert source.domain == "reuters.com"
-        assert source.google_news_url == "https://news.google.com/rss/search?q=economy"
 
     def test_yaml_without_settings_returns_defaults(self, tmp_path) -> None:
         yaml_content = "topics: {}\n"
