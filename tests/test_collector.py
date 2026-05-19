@@ -8,107 +8,44 @@ import feedparser
 from core.collector import FeedCollector
 from core.models import Article, FeedSettings, Source, Topic
 
-SAMPLE_RSS = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>Test Feed</title>
-    <item>
-      <title>First Article</title>
-      <link>https://example.com/article-1</link>
-      <pubDate>Wed, 14 May 2026 10:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>Second Article</title>
-      <link>https://example.com/article-2</link>
-      <pubDate>Wed, 14 May 2026 12:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>Third Article</title>
-      <link>https://example.com/article-3</link>
-      <pubDate>Wed, 14 May 2026 14:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>Fourth Article</title>
-      <link>https://example.com/article-4</link>
-      <pubDate>Wed, 14 May 2026 16:00:00 GMT</pubDate>
-    </item>
-  </channel>
-</rss>
-"""
 
-SAMPLE_RSS_WITH_DUPLICATES = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>Test Feed</title>
-    <item>
-      <title>First Article</title>
-      <link>https://example.com/article-1</link>
-      <pubDate>Wed, 14 May 2026 10:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>First Article (duplicate)</title>
-      <link>https://example.com/article-1</link>
-      <pubDate>Wed, 14 May 2026 10:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>Second Article</title>
-      <link>https://example.com/article-2</link>
-      <pubDate>Wed, 14 May 2026 12:00:00 GMT</pubDate>
-    </item>
-  </channel>
-</rss>
-"""
+def _build_rss(items: list[tuple[str, str]]) -> str:
+    entries = "\n".join(
+        f"    <item><title>{title}</title><link>{url}</link>"
+        f"<pubDate>Wed, 14 May 2026 10:00:00 GMT</pubDate></item>"
+        for title, url in items
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        "<rss version=\"2.0\">\n  <channel>\n"
+        f"    <title>Test</title>\n{entries}\n"
+        "  </channel>\n</rss>"
+    )
 
-SAMPLE_RSS_MIXED_SOURCES = """\
-<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0">
-  <channel>
-    <title>Test Feed</title>
-    <item>
-      <title>A1</title>
-      <link>https://source-a.com/a1</link>
-      <pubDate>Wed, 14 May 2026 10:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>A2</title>
-      <link>https://source-a.com/a2</link>
-      <pubDate>Wed, 14 May 2026 11:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>A3</title>
-      <link>https://source-a.com/a3</link>
-      <pubDate>Wed, 14 May 2026 12:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>A4</title>
-      <link>https://source-a.com/a4</link>
-      <pubDate>Wed, 14 May 2026 13:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>B1</title>
-      <link>https://source-b.com/b1</link>
-      <pubDate>Wed, 14 May 2026 14:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>B2</title>
-      <link>https://source-b.com/b2</link>
-      <pubDate>Wed, 14 May 2026 15:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>B3</title>
-      <link>https://source-b.com/b3</link>
-      <pubDate>Wed, 14 May 2026 16:00:00 GMT</pubDate>
-    </item>
-    <item>
-      <title>B4</title>
-      <link>https://source-b.com/b4</link>
-      <pubDate>Wed, 14 May 2026 17:00:00 GMT</pubDate>
-    </item>
-  </channel>
-</rss>
-"""
+
+SAMPLE_RSS = _build_rss([
+    ("First Article", "https://example.com/article-1"),
+    ("Second Article", "https://example.com/article-2"),
+    ("Third Article", "https://example.com/article-3"),
+    ("Fourth Article", "https://example.com/article-4"),
+])
+
+SAMPLE_RSS_WITH_DUPLICATES = _build_rss([
+    ("First Article", "https://example.com/article-1"),
+    ("First Article (duplicate)", "https://example.com/article-1"),
+    ("Second Article", "https://example.com/article-2"),
+])
+
+SAMPLE_RSS_MIXED_SOURCES = _build_rss([
+    ("A1", "https://source-a.com/a1"),
+    ("A2", "https://source-a.com/a2"),
+    ("A3", "https://source-a.com/a3"),
+    ("A4", "https://source-a.com/a4"),
+    ("B1", "https://source-b.com/b1"),
+    ("B2", "https://source-b.com/b2"),
+    ("B3", "https://source-b.com/b3"),
+    ("B4", "https://source-b.com/b4"),
+])
 
 MALFORMED_RSS = "this is not valid xml at all"
 
@@ -133,7 +70,7 @@ def _make_topic(
 def _default_settings(**overrides) -> FeedSettings:
     defaults = {
         "max_articles_per_topic": 15,
-        "max_articles_per_source": 3,
+        "min_articles_per_source": 1,
     }
     defaults.update(overrides)
     return FeedSettings(**defaults)
@@ -187,24 +124,14 @@ class TestFeedCollectorParsing:
         result = asyncio.run(collector.collect())
 
         topic_result = result.topic_results[0]
-        assert len(topic_result.articles) == 3
-        assert topic_result.articles[0].title == "First Article"
-        assert topic_result.articles[0].source_name == "TestSource"
-        assert topic_result.articles[0].topic_key == "test_topic"
-        assert topic_result.articles[0].topic_display_name == "Test Topic"
+        first = topic_result.articles[0]
+        assert len(topic_result.articles) == 4
+        assert first.title == "First Article"
+        assert first.source_name == "TestSource"
+        assert first.topic_key == "test_topic"
+        assert first.topic_display_name == "Test Topic"
+        assert first.published_at == datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
         assert topic_result.failed_sources == []
-
-    def test_published_date_is_parsed_as_utc_datetime(self) -> None:
-        topic = _make_topic()
-        collector = FakeFeedCollector(
-            _default_settings(),
-            [topic],
-            {"test_topic": SAMPLE_RSS},
-        )
-        result = asyncio.run(collector.collect())
-
-        expected = datetime(2026, 5, 14, 10, 0, 0, tzinfo=UTC)
-        assert result.topic_results[0].articles[0].published_at == expected
 
     def test_duplicate_urls_are_kept_only_once(self) -> None:
         topic = _make_topic()
@@ -232,32 +159,45 @@ class TestFeedCollectorParsing:
         assert "TestSource" in topic_result.failed_sources
 
 
-class TestCollectorLimits:
-    def test_source_capped_at_max_articles_per_source(self) -> None:
-        topic = _make_topic()
-        collector = FakeFeedCollector(
-            _default_settings(max_articles_per_source=2),
-            [topic],
-            {"test_topic": SAMPLE_RSS},
-        )
-        result = asyncio.run(collector.collect())
-
-        assert len(result.topic_results[0].articles) == 2
-
-    def test_topic_capped_at_max_articles_per_topic(self) -> None:
+class TestArticlePrioritization:
+    def test_each_source_guaranteed_at_least_min_articles(self) -> None:
         sources = [
             _make_source("SourceA", "source-a.com"),
             _make_source("SourceB", "source-b.com"),
         ]
         topic = _make_topic(sources=sources)
         collector = FakeFeedCollector(
-            _default_settings(max_articles_per_topic=5, max_articles_per_source=4),
+            _default_settings(max_articles_per_topic=4),
             [topic],
             {"test_topic": SAMPLE_RSS_MIXED_SOURCES},
         )
         result = asyncio.run(collector.collect())
 
-        assert len(result.topic_results[0].articles) <= 5
+        articles = result.topic_results[0].articles
+        source_names = {a.source_name for a in articles}
+        assert "SourceA" in source_names
+        assert "SourceB" in source_names
+
+    def test_remaining_slots_filled_by_ranking_order(self) -> None:
+        sources = [
+            _make_source("SourceA", "source-a.com"),
+            _make_source("SourceB", "source-b.com"),
+        ]
+        topic = _make_topic(sources=sources)
+        collector = FakeFeedCollector(
+            _default_settings(max_articles_per_topic=5),
+            [topic],
+            {"test_topic": SAMPLE_RSS_MIXED_SOURCES},
+        )
+        result = asyncio.run(collector.collect())
+
+        articles = result.topic_results[0].articles
+        assert len(articles) == 5
+        assert articles[0].title == "A1"
+        assert articles[1].title == "B1"
+        assert articles[2].title == "A2"
+        assert articles[3].title == "A3"
+        assert articles[4].title == "A4"
 
     def test_multiple_topics_collect_articles_independently(self) -> None:
         topic_a = _make_topic(key="topic_a")
@@ -276,7 +216,7 @@ class TestCollectorLimits:
         result = asyncio.run(collector.collect())
 
         assert len(result.topic_results) == 2
-        assert result.total_articles == 6
+        assert result.total_articles == 8
 
 
 class TestBuildGoogleNewsUrl:
@@ -295,6 +235,7 @@ class TestBuildGoogleNewsUrl:
         url = FeedCollector._build_google_news_url(topic)
 
         assert "news.google.com/rss/search" in url
+        assert "artificial+intelligence+OR+machine+learning" in url
         assert "(site:reuters.com+OR+site:wired.com)" in url
         assert "when:7d" in url
         assert "hl=en-US" in url
@@ -314,35 +255,6 @@ class TestBuildGoogleNewsUrl:
 
         assert "hl=pt-BR" in url
         assert "gl=BR" in url
-
-    def test_keywords_joined_with_or(self) -> None:
-        topic = Topic(
-            key="test",
-            display_name="Test",
-            keywords=["AI", "LLM", "deep learning"],
-            language="en",
-            sources=[Source(name="Test", domain="example.com")],
-        )
-
-        url = FeedCollector._build_google_news_url(topic)
-
-        assert "AI+OR+LLM+OR+deep+learning" in url
-
-    def test_sources_grouped_in_parentheses_with_site_prefix(self) -> None:
-        topic = Topic(
-            key="test",
-            display_name="Test",
-            keywords=["news"],
-            language="en",
-            sources=[
-                Source(name="A", domain="a.com"),
-                Source(name="B", domain="b.com"),
-            ],
-        )
-
-        url = FeedCollector._build_google_news_url(topic)
-
-        assert "(site:a.com+OR+site:b.com)" in url
 
     def test_unknown_language_falls_back_to_english(self) -> None:
         topic = Topic(
