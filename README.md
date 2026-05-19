@@ -1,6 +1,6 @@
 # News Coo
 
-A Discord bot that collects news from Google News RSS feeds, organizes them by topic, and displays paginated digests using slash commands. Feed sources and topics are declared in a single YAML file; the collector builds one Google News query per topic combining all sources, fetches all topics in parallel, and applies source-guarantee prioritization with deduplication.
+A Discord bot that collects news from Google News RSS feeds, organizes them by topic, and displays paginated digests using slash commands. Feed sources and topics are declared in a single YAML file; the collector builds one Google News query per topic combining all sources, fetches all topics in parallel, and fills missing top-result sources from leftover combined results or single-source fallback requests.
 
 ## Table of contents
 
@@ -18,14 +18,13 @@ A Discord bot that collects news from Google News RSS feeds, organizes them by t
 
 - **Declarative feed configuration.** Topics and sources are defined in `config/feeds.yaml`. Adding a new source is a two-line YAML entry (name + domain) — no code changes required. The collector builds the Google News RSS URL automatically from the topic keywords, source domains, and language.
 - **Parallel collection.** All topics are fetched concurrently via `asyncio.gather`. Each topic produces a single Google News query that combines all its sources with `(site:a.com OR site:b.com)`, leveraging Google's own ranking.
-- **Source-guarantee prioritization.** Each source is guaranteed a minimum number of articles (configurable). Remaining slots up to the topic limit are filled by Google's ranking order across all sources.
-- **Cross-source deduplication.** Duplicate articles (by URL) within the same topic are filtered out automatically.
+- **Source coverage fallback.** The collector first keeps Google's top ranked results, then checks which configured sources are missing from that top set. Missing sources are filled from lower-ranked combined results when available, or from one individual single-source request when needed.
 - **Paginated Discord embeds.** The `/digest` command displays one topic per page with Previous/Next navigation buttons. The pagination component is generic and reusable by other commands.
 
 ## Requirements
 
 - Python 3.14+
-- A Discord bot token with the Message Content intent enabled.
+- A Discord bot token from an application invited with the `bot` and `applications.commands` scopes.
 - Dependencies listed in `requirements.txt` (discord.py, feedparser, PyYAML, python-dotenv).
 
 ## Quick start
@@ -66,9 +65,9 @@ The bot logs to `bot.log` in the project root. Use `./_scripts/setup.sh status` 
 ├── core/
 │   ├── models.py             # Domain dataclasses (Article, Topic, Source, etc.)
 │   ├── feed_loader.py        # YAML config parser
-│   └── collector.py          # RSS fetcher with parallel topics, prioritization, and dedup
+│   └── collector.py          # RSS fetcher with parallel topics and source fallback
 ├── tests/
-│   ├── test_collector.py     # Feed collection, parsing, prioritization, dedup
+│   ├── test_collector.py     # Feed collection, parsing, ranking, fallback
 │   ├── test_digest_embed.py  # Embed formatting and content
 │   ├── test_feed_loader.py   # YAML loading and defaults
 │   └── test_pagination.py    # Pagination view navigation and state
@@ -88,7 +87,6 @@ The bot logs to `bot.log` in the project root. Use `./_scripts/setup.sh status` 
 | Key | Default | Description |
 |---|---|---|
 | `max_articles_per_topic` | `15` | Maximum articles kept per topic after collection. |
-| `min_articles_per_source` | `1` | Minimum guaranteed articles from each source before filling remaining slots by ranking. |
 
 ### Topics and sources
 
@@ -110,10 +108,16 @@ topics:
         domain: ft.com
 ```
 
-The generated Google News RSS URL follows this format:
+The combined Google News RSS URL follows this format:
 
 ```
 https://news.google.com/rss/search?q={keyword1}+OR+{keyword2}+(site:{domain1}+OR+site:{domain2})+when:7d&hl={hl}&gl={gl}&ceid={ceid}
+```
+
+When a configured source is missing from the top results and does not appear in the lower-ranked combined results, the fallback URL targets a single source:
+
+```
+https://news.google.com/rss/search?q={keyword1}+OR+{keyword2}+site:{domain}+when:7d&hl={hl}&gl={gl}&ceid={ceid}
 ```
 
 Supported languages: `en` (US locale) and `pt` (Brazilian locale). The `when:7d` suffix restricts results to the last 7 days.
